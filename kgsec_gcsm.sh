@@ -14,18 +14,39 @@ SECRET_DATA=$(kubectl get secret ${SECRET_NAME} -n ${NAMESPACE} -o json | jq -r 
 # Decode the base64-encoded data
 SECRET_VALUES=$(echo "${SECRET_DATA}" | jq -r 'to_entries | map("\(.key)=\(.value | @base64d)") | .[]')
 
-# Iterate through each key-value pair and add it to Google Cloud Secret Manager
-IFS=$'\n'
-for ENTRY in ${SECRET_VALUES}; do
+# Check if the secret already exists in Google Cloud Secret Manager
+if gcloud secrets describe ${SECRET_ID} --project=${PROJECT_ID} &>/dev/null; then
+  echo "Secret ${SECRET_ID} already exists. Updating versions..."
+
+  # Update the existing secret with new versions
+  IFS=$'\n'
+  for ENTRY in ${SECRET_VALUES}; do
     KEY=$(echo "${ENTRY}" | cut -d'=' -f1)
     VALUE=$(echo "${ENTRY}" | cut -d'=' -f2)
 
-    # Add the secret to Google Cloud Secret Manager
-    gcloud secrets create ${KEY} --replication-policy="automatic" --data-file=- <<EOF
+    gcloud secrets versions add ${SECRET_ID} --data-file=- --project=${PROJECT_ID} <<EOF
+${VALUE}
+EOF
+
+    echo "Updated ${KEY} in Google Cloud Secret Manager"
+  done
+
+  unset IFS
+else
+  echo "Secret ${SECRET_ID} does not exist. Creating and adding values..."
+
+  # Create the secret in Google Cloud Secret Manager
+  IFS=$'\n'
+  for ENTRY in ${SECRET_VALUES}; do
+    KEY=$(echo "${ENTRY}" | cut -d'=' -f1)
+    VALUE=$(echo "${ENTRY}" | cut -d'=' -f2)
+
+    gcloud secrets create ${KEY} --replication-policy="automatic" --data-file=- --project=${PROJECT_ID} <<EOF
 ${VALUE}
 EOF
 
     echo "Added ${KEY} to Google Cloud Secret Manager"
-done
+  done
 
-unset IFS
+  unset IFS
+fi
