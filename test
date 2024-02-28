@@ -1,0 +1,6 @@
+locals {
+  secrets = flatten([
+    for app_name, secrets in var.secrets : {
+      for secret_name, secret in secrets : "${app_name}-${secret_name}" => secret
+    }
+  ])[0]
